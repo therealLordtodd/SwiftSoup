@@ -82,6 +82,19 @@ class HtmlTreeBuilder: TreeBuilder {
 
     override func initialiseParse(_ input: [UInt8], _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) {
         super.initialiseParse(input, baseUri, errors, settings)
+        // Discard state from any previous parse on this builder. Most of it drains naturally over a
+        // well-formed document, but unclosed formatting elements, a pending form, or table
+        // characters survive to the end of a parse -- and a parse that throws part way through
+        // leaves everything behind.
+        _originalState = HtmlTreeBuilderState.Initial
+        headElement = nil
+        formElement = nil
+        contextElement = nil
+        formattingElements.removeAll(keepingCapacity: true)
+        pendingTableCharacters.removeAll(keepingCapacity: true)
+        _framesetOk = true
+        fosterInserts = false
+        fragmentParsing = false
         resetStackTracking()
     }
 
