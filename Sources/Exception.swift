@@ -17,6 +17,9 @@ public enum ExceptionType: Sendable {
     /// Thrown when a parse would nest elements deeper than the configured
     /// `ParseSettings.maxTreeDepth` limit.
     case TreeDepthExceeded
+    /// Thrown when a parse does more work than the configured
+    /// `ParseSettings.maxParseWork` budget allows.
+    case ParseBudgetExceeded
 }
 
 public enum Exception: Error {

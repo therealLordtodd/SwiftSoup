@@ -23,6 +23,10 @@ public class TreeBuilder {
     /// so parser-created structure (`html`/`head`/`body` shells, implied `tbody`, ...) counts
     /// exactly as authored elements do.
     public var maxTreeDepth: Int = ParseSettings.unlimitedTreeDepth
+    /// Cached from `settings.maximumParseWork()` at parse start; `Int.max` means unbudgeted.
+    public var maxParseWork: Int = ParseSettings.unlimitedParseWork
+    /// Work units consumed by the parse in progress. See `ParseSettings.maximumParseWork()`.
+    public var parseWork: Int = 0
     @usableFromInline
     var pendingAttributeElements: [Element] = []
     
@@ -44,6 +48,7 @@ public class TreeBuilder {
         errors = ParseErrorList(0, 0)
         settings = ParseSettings(false, false)
         maxTreeDepth = settings.maximumTreeDepth()
+        maxParseWork = settings.maximumParseWork()
         tokeniser = Tokeniser(reader, nil, settings)
     }
     
@@ -59,6 +64,10 @@ public class TreeBuilder {
     
     public func initialiseParse(_ input: [UInt8], _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) {
         doc = Document(baseUri)
+        // Anchor the document to this parse. Everything that depends on the parse rather than on
+        // the entry point -- the work budget in particular -- reaches the tree builder through it,
+        // so it has to be set wherever a parse starts, not only on the document route.
+        doc.treeBuilder = self
         tracksSourceRanges = settings.tracksSourceRanges()
         if tracksSourceRanges {
             doc.sourceBuffer = SourceBuffer(input)
@@ -68,6 +77,8 @@ public class TreeBuilder {
         doc.parsedAsXml = false
         self.settings = settings
         maxTreeDepth = settings.maximumTreeDepth()
+        maxParseWork = settings.maximumParseWork()
+        parseWork = 0
         let parseBuffer: [UInt8]
         if tracksSourceRanges, let sourceBuffer = doc.sourceBuffer {
             parseBuffer = sourceBuffer.bytes
@@ -85,6 +96,10 @@ public class TreeBuilder {
 
     public func initialiseParse(_ input: UnsafeBufferPointer<UInt8>, owner: AnyObject?, _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) {
         doc = Document(baseUri)
+        // Anchor the document to this parse. Everything that depends on the parse rather than on
+        // the entry point -- the work budget in particular -- reaches the tree builder through it,
+        // so it has to be set wherever a parse starts, not only on the document route.
+        doc.treeBuilder = self
         tracksSourceRanges = settings.tracksSourceRanges()
         if tracksSourceRanges {
             let copied = Array(input)
@@ -97,6 +112,8 @@ public class TreeBuilder {
         doc.parsedAsXml = false
         self.settings = settings
         maxTreeDepth = settings.maximumTreeDepth()
+        maxParseWork = settings.maximumParseWork()
+        parseWork = 0
         self.errors = errors
         tracksErrors = errors.getMaxSize() > 0
         tokeniser = Tokeniser(reader, tracksErrors ? errors : nil, settings)
@@ -157,6 +174,7 @@ public class TreeBuilder {
         while (true) {
             let token: Token = try tokeniser.read()
             try process(token)
+            try chargeParseWork(0) // enforce scan work recorded by this token
             if (token.type == Token.TokenType.EOF) {
                 break
             }
@@ -226,6 +244,36 @@ public class TreeBuilder {
     @inlinable
     public var isDepthLimited: Bool {
         return maxTreeDepth != ParseSettings.unlimitedTreeDepth
+    }
+
+    /// `true` when a parse work budget is in force. Guard the accounting behind this so an
+    /// unbudgeted parse (the default) pays nothing beyond one integer comparison.
+    @inlinable
+    public var isWorkLimited: Bool {
+        return maxParseWork != ParseSettings.unlimitedParseWork
+    }
+
+    /// Record stack-scan work. Non-throwing: the budget is enforced at the next checkpoint
+    /// (`chargeParseWork`, called per attached node and once per token), so the scan helpers that
+    /// are not `throws` today do not have to become so. Overshoot is bounded by one token's work.
+    @inlinable
+    @inline(__always)
+    public func countStackWork(_ units: Int) {
+        if maxParseWork == ParseSettings.unlimitedParseWork { return }
+        parseWork &+= units
+    }
+
+    /// Charge `units` of work to the budget. See `ParseSettings.maximumParseWork()` for what a
+    /// unit is. Cheap when unbudgeted: one comparison.
+    @inlinable
+    @inline(__always)
+    public func chargeParseWork(_ units: Int) throws {
+        if maxParseWork == ParseSettings.unlimitedParseWork { return }
+        parseWork &+= units
+        if parseWork > maxParseWork {
+            throw Exception.Error(type: .ParseBudgetExceeded,
+                                  Message: "Parse work budget of \(maxParseWork) units exceeded")
+        }
     }
 
     /**

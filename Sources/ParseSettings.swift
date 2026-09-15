@@ -22,12 +22,19 @@ open class ParseSettings: @unchecked Sendable {
     private let trackSourceRanges: Bool
     private let trackAttributes: Bool
     private let maxTreeDepth: Int
+    private let maxParseWork: Int
 
     /**
      The value of ``maxTreeDepth`` that disables the tree depth limit. This is the default,
      so that parse behaviour is unchanged unless a limit is explicitly requested.
      */
     public static let unlimitedTreeDepth: Int = Int.max
+
+    /**
+     The value of ``maxParseWork`` that disables the parse work budget. This is the default, so
+     that parse behaviour is unchanged unless a budget is explicitly requested.
+     */
+    public static let unlimitedParseWork: Int = Int.max
     
     @usableFromInline
     internal static let defaultTrackSourceRanges: Bool = true
@@ -43,6 +50,7 @@ open class ParseSettings: @unchecked Sendable {
         trackSourceRanges = ParseSettings.defaultTrackSourceRanges
         trackAttributes = true
         maxTreeDepth = ParseSettings.unlimitedTreeDepth
+        maxParseWork = ParseSettings.unlimitedParseWork
     }
 
     public init(_ tag: Bool, _ attribute: Bool, _ trackSourceRanges: Bool) {
@@ -51,6 +59,7 @@ open class ParseSettings: @unchecked Sendable {
         self.trackSourceRanges = trackSourceRanges
         trackAttributes = true
         maxTreeDepth = ParseSettings.unlimitedTreeDepth
+        maxParseWork = ParseSettings.unlimitedParseWork
     }
 
     public init(_ tag: Bool, _ attribute: Bool, _ trackSourceRanges: Bool, _ trackAttributes: Bool) {
@@ -59,6 +68,7 @@ open class ParseSettings: @unchecked Sendable {
         self.trackSourceRanges = trackSourceRanges
         self.trackAttributes = trackAttributes
         maxTreeDepth = ParseSettings.unlimitedTreeDepth
+        maxParseWork = ParseSettings.unlimitedParseWork
     }
 
     /**
@@ -79,6 +89,25 @@ open class ParseSettings: @unchecked Sendable {
         self.trackSourceRanges = trackSourceRanges
         self.trackAttributes = trackAttributes
         self.maxTreeDepth = maxTreeDepth
+        maxParseWork = ParseSettings.unlimitedParseWork
+    }
+
+    /**
+     Define parse settings, including a maximum tree depth and a parse work budget.
+     - parameter tag: preserve tag case?
+     - parameter attribute: preserve attribute name case?
+     - parameter trackSourceRanges: record source ranges on parsed nodes?
+     - parameter trackAttributes: retain attributes on parsed elements?
+     - parameter maxTreeDepth: see ``maximumTreeDepth()``.
+     - parameter maxParseWork: see ``maximumParseWork()``.
+     */
+    public init(_ tag: Bool, _ attribute: Bool, _ trackSourceRanges: Bool, _ trackAttributes: Bool, _ maxTreeDepth: Int, _ maxParseWork: Int) {
+        preserveTagCase = tag
+        preserveAttributeCase = attribute
+        self.trackSourceRanges = trackSourceRanges
+        self.trackAttributes = trackAttributes
+        self.maxTreeDepth = maxTreeDepth
+        self.maxParseWork = maxParseWork
     }
 
     @inline(__always)
@@ -123,7 +152,46 @@ open class ParseSettings: @unchecked Sendable {
      - returns: a new `ParseSettings`; the receiver is not modified.
      */
     open func withMaxTreeDepth(_ depth: Int) -> ParseSettings {
-        return ParseSettings(preserveTagCase, preserveAttributeCase, trackSourceRanges, trackAttributes, depth)
+        return ParseSettings(preserveTagCase, preserveAttributeCase, trackSourceRanges, trackAttributes, depth, maxParseWork)
+    }
+
+    /**
+     A budget for the total work a parse may do, in work units, or ``unlimitedParseWork`` (the
+     default) for no budget. A parse that exceeds it throws
+     `Exception.Error(type: .ParseBudgetExceeded, ...)`.
+
+     A **work unit** is one of two things, and the budget counts both:
+
+     1. One node attached to the tree -- element, text, comment or doctype.
+     2. One entry examined on the stack of open elements by a scan: the scope tests
+        (`inScope`, `inButtonScope`, `inTableScope`, `inSelectScope`, `inListItemScope`), the
+        searches that close or clear elements (`popStackToClose`, `clearStackToContext`,
+        `popStackToBefore`), and the lookups that locate an element on the stack.
+
+     Both are counted because neither bounds a parse on its own. Nodes alone miss that a scan can
+     cost as much as the stack is deep, which is what makes a deeply nested document expensive out
+     of proportion to its size; scans alone miss a large flat document. Counting them together
+     tracks the real cost closely enough to size a budget from a measured corpus: parse a
+     representative sample, read the work it used, and set the budget some multiple above it.
+
+     The count is deterministic -- it depends only on the input and the settings, never on machine
+     speed or load -- so the same document always succeeds or fails the same way. That is the point
+     of a work budget rather than a timeout.
+     */
+    @inline(__always)
+    public func maximumParseWork() -> Int {
+        return maxParseWork
+    }
+
+    /**
+     Returns a copy of these settings with the given parse work budget.
+
+     - parameter work: the budget in work units (see ``maximumParseWork()``), or
+     ``unlimitedParseWork`` for no budget.
+     - returns: a new `ParseSettings`; the receiver is not modified.
+     */
+    open func withMaxParseWork(_ work: Int) -> ParseSettings {
+        return ParseSettings(preserveTagCase, preserveAttributeCase, trackSourceRanges, trackAttributes, maxTreeDepth, work)
     }
 
     open func normalizeTag(_ name: [UInt8]) -> [UInt8] {

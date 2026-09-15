@@ -683,6 +683,9 @@ open class Document: Element {
 
         var ancestor = node.parentNode
         while let current = ancestor {
+            // Charged to the parse budget: this walk is per attached node and proportional to the
+            // node's depth, which is the dominant depth-sensitive cost of parsing a deep document.
+            (treeBuilder ?? node.treeBuilder)?.countStackWork(1)
             let ancestorIdentifier = ObjectIdentifier(current)
             if let registered = dirtySourceRoots[ancestorIdentifier]?.value,
                registered === current,

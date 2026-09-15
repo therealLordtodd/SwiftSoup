@@ -431,6 +431,7 @@ class HtmlTreeBuilder: TreeBuilder {
     // `elementDepth(currentElement()) <= maxTreeDepth` is an invariant here.
     @inlinable
     func insert(_ characterToken: Token.Char) throws {
+        try chargeParseWork(1)
         let current = currentElement()
         let currentTag = current?._tag
         let currentTagId = currentTag?.tagId ?? .none
@@ -575,6 +576,7 @@ class HtmlTreeBuilder: TreeBuilder {
         // Depth is bounded against the tree the node will live in, not against the stack of open
         // elements -- see `enforceTreeDepth`. A text or comment node cannot have element children,
         // so it adds no height of its own.
+        try chargeParseWork(1)
         let depthLimited = isDepthLimited
         // if the stack hasn't been set up yet, elements (doctype, comments) go into the doc
         if stack.isEmpty {
@@ -635,6 +637,7 @@ class HtmlTreeBuilder: TreeBuilder {
         if stack.isEmpty {
             return
         }
+        countStackWork(stack.count)
         for (index, element) in stack.enumerated() {
             updateStackTrackingOnPush(element, index: index, allowDirty: false)
         }
@@ -742,6 +745,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             if stack[i].nodeNameUTF8() == elName {
                 return i
             }
@@ -755,6 +759,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             let el = stack[i]
             let tagId = el._tag.tagId
             if tagId != .none {
@@ -775,6 +780,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             if names.contains(stack[i].nodeNameUTF8()) {
                 return i
             }
@@ -787,6 +793,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             if names.contains(stack[i].nodeNameUTF8()) {
                 return i
             }
@@ -799,6 +806,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             if stack[i] == element {
                 return i
             }
@@ -885,6 +893,7 @@ class HtmlTreeBuilder: TreeBuilder {
     
     func popStackToBefore(_ elName: [UInt8]) {
         for pos in (0..<stack.count).reversed() {
+            countStackWork(1)
             let next: Element = stack[pos]
             if (next.nodeNameUTF8() == elName) {
                 break
@@ -1026,6 +1035,7 @@ class HtmlTreeBuilder: TreeBuilder {
     func resetInsertionMode() {
         var last = false
         for pos in (0..<stack.count).reversed() {
+            countStackWork(1)
             var node: Element = stack[pos]
             if (pos == 0) {
                 last = true
@@ -1078,6 +1088,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             let el = stack[i]
             let tagId = el._tag.tagId
             if tagId != .none {
@@ -1114,6 +1125,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             let elName = stack[i].nodeNameUTF8()
             if targetNames.contains(elName) {
                 return true
@@ -1133,6 +1145,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var i = stack.count
         while i > 0 {
             i &-= 1
+            countStackWork(1)
             let el = stack[i]
             let tagId = el._tag.tagId
             if tagId != .none {
@@ -1234,6 +1247,7 @@ class HtmlTreeBuilder: TreeBuilder {
     func inSelectScope(_ targetName: [UInt8]) throws -> Bool {
         let targetTagId = Token.Tag.tagIdForBytes(targetName)
         for el in stack.reversed() {
+            countStackWork(1)
             let tagId = el._tag.tagId
             if tagId != .none {
                 if let targetTagId, tagId == targetTagId {
@@ -1340,6 +1354,7 @@ class HtmlTreeBuilder: TreeBuilder {
             } else {
                 guard TagSets.endTags.contains(current.nodeNameUTF8()) else { return }
             }
+            countStackWork(1)
             pop()
         }
     }

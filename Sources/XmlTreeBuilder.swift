@@ -69,6 +69,7 @@ public class XmlTreeBuilder: TreeBuilder {
     
     @inline(__always)
     private func insertNode(_ node: Node)throws {
+        try chargeParseWork(1)
         let depthLimited = isDepthLimited
         if stack.isEmpty {
             if depthLimited {
