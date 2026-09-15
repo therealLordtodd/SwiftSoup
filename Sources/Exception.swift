@@ -14,6 +14,9 @@ public enum ExceptionType: Sendable {
     case MalformedURLException
     case CloneNotSupportedException
     case SelectorParseException
+    /// Thrown when a parse would nest elements deeper than the configured
+    /// `ParseSettings.maxTreeDepth` limit.
+    case TreeDepthExceeded
 }
 
 public enum Exception: Error {

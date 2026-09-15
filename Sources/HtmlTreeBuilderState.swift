@@ -1129,6 +1129,11 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
                             if (lastNode!.parent() != nil) {
                                 try lastNode?.remove()
                             }
+                            // Adoption agency reparenting: the moved subtree's own height counts.
+                            if tb.isDepthLimited {
+                                try tb.enforceTreeDepth(attachingUnder: node!,
+                                                        addedHeight: tb.subtreeHeight(lastNode!, cappedAt: tb.maxTreeDepth))
+                            }
                             try node!.appendChild(lastNode!)
 
                             lastNode = node
@@ -1143,6 +1148,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
                             if (lastNode!.parent() != nil) {
                                 try lastNode!.remove()
                             }
+                            if tb.isDepthLimited {
+                                try tb.enforceTreeDepth(attachingUnder: commonAncestor!,
+                                                        addedHeight: tb.subtreeHeight(lastNode!, cappedAt: tb.maxTreeDepth))
+                            }
                             try commonAncestor!.appendChild(lastNode!)
                         }
 
@@ -1152,6 +1161,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
                         let childNodes: [Node] = furthestBlock!.getChildNodes()
                         for childNode: Node in childNodes {
                             try adopter.appendChild(childNode) // append will reparent. thus the clone to avoid concurrent mod.
+                        }
+                        if tb.isDepthLimited, let furthestBlock = furthestBlock {
+                            try tb.enforceTreeDepth(attachingUnder: furthestBlock,
+                                                    addedHeight: tb.subtreeHeight(adopter, cappedAt: tb.maxTreeDepth))
                         }
                         try furthestBlock?.appendChild(adopter)
                         tb.removeFromActiveFormattingElements(formatEl)

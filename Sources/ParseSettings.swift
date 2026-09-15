@@ -21,6 +21,13 @@ open class ParseSettings: @unchecked Sendable {
     private let preserveAttributeCase: Bool
     private let trackSourceRanges: Bool
     private let trackAttributes: Bool
+    private let maxTreeDepth: Int
+
+    /**
+     The value of ``maxTreeDepth`` that disables the tree depth limit. This is the default,
+     so that parse behaviour is unchanged unless a limit is explicitly requested.
+     */
+    public static let unlimitedTreeDepth: Int = Int.max
     
     @usableFromInline
     internal static let defaultTrackSourceRanges: Bool = true
@@ -35,6 +42,7 @@ open class ParseSettings: @unchecked Sendable {
         preserveAttributeCase = attribute
         trackSourceRanges = ParseSettings.defaultTrackSourceRanges
         trackAttributes = true
+        maxTreeDepth = ParseSettings.unlimitedTreeDepth
     }
 
     public init(_ tag: Bool, _ attribute: Bool, _ trackSourceRanges: Bool) {
@@ -42,6 +50,7 @@ open class ParseSettings: @unchecked Sendable {
         preserveAttributeCase = attribute
         self.trackSourceRanges = trackSourceRanges
         trackAttributes = true
+        maxTreeDepth = ParseSettings.unlimitedTreeDepth
     }
 
     public init(_ tag: Bool, _ attribute: Bool, _ trackSourceRanges: Bool, _ trackAttributes: Bool) {
@@ -49,6 +58,27 @@ open class ParseSettings: @unchecked Sendable {
         preserveAttributeCase = attribute
         self.trackSourceRanges = trackSourceRanges
         self.trackAttributes = trackAttributes
+        maxTreeDepth = ParseSettings.unlimitedTreeDepth
+    }
+
+    /**
+     Define parse settings, including a maximum tree depth.
+     - parameter tag: preserve tag case?
+     - parameter attribute: preserve attribute name case?
+     - parameter trackSourceRanges: record source ranges on parsed nodes?
+     - parameter trackAttributes: retain attributes on parsed elements?
+     - parameter maxTreeDepth: the maximum nesting depth of any element in the parsed
+     tree, counting parser-created shells (`html`, `head`, `body`, implied `tbody`) as the finished
+     tree contains them. A parse that would attach an element deeper than this throws
+     `Exception.Error(type: .TreeDepthExceeded, ...)`.
+     Use ``unlimitedTreeDepth`` (the default) for no limit.
+     */
+    public init(_ tag: Bool, _ attribute: Bool, _ trackSourceRanges: Bool, _ trackAttributes: Bool, _ maxTreeDepth: Int) {
+        preserveTagCase = tag
+        preserveAttributeCase = attribute
+        self.trackSourceRanges = trackSourceRanges
+        self.trackAttributes = trackAttributes
+        self.maxTreeDepth = maxTreeDepth
     }
 
     @inline(__always)
@@ -69,6 +99,31 @@ open class ParseSettings: @unchecked Sendable {
     @inline(__always)
     internal func tracksAttributes() -> Bool {
         return trackAttributes
+    }
+
+    /**
+     The maximum nesting depth of any element in the parsed tree, counting parser-created shells
+     (`html`, `head`, `body`, implied `tbody`) as the finished tree contains them. A parse that
+     would attach an element deeper than this throws
+     `Exception.Error(type: .TreeDepthExceeded, ...)`. ``unlimitedTreeDepth`` means no limit.
+     */
+    @inline(__always)
+    public func maximumTreeDepth() -> Int {
+        return maxTreeDepth
+    }
+
+    /**
+     Returns a copy of these settings with the given maximum tree depth.
+
+     - parameter depth: the maximum nesting depth of any element in the parsed
+     tree, counting parser-created shells (`html`, `head`, `body`, implied `tbody`) as the finished
+     tree contains them. A parse that would attach an element deeper than this throws
+     `Exception.Error(type: .TreeDepthExceeded, ...)`.
+     Pass ``unlimitedTreeDepth`` for no limit.
+     - returns: a new `ParseSettings`; the receiver is not modified.
+     */
+    open func withMaxTreeDepth(_ depth: Int) -> ParseSettings {
+        return ParseSettings(preserveTagCase, preserveAttributeCase, trackSourceRanges, trackAttributes, depth)
     }
 
     open func normalizeTag(_ name: [UInt8]) -> [UInt8] {

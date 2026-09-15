@@ -341,8 +341,8 @@ import Foundation
 	 - returns: sane HTML document
 	 - seealso: ``Document/body()``
 	*/
-	public func parseBodyFragment(_ bodyHtml: String, _ baseUri: String) throws -> Document {
-		return try Parser.parseBodyFragment(bodyHtml, baseUri)
+	public func parseBodyFragment(_ bodyHtml: String, _ baseUri: String, settings: ParseSettings? = nil) throws -> Document {
+		return try Parser.parseBodyFragment(bodyHtml, baseUri, settings: settings)
 	}
 
 	/**
@@ -389,8 +389,8 @@ import Foundation
 	 - returns: safe HTML (body fragment)
 	 - seealso: ``Cleaner/clean(_:)``
 	*/
-	public func clean(_ bodyHtml: String, _ baseUri: String, _ whitelist: Whitelist) throws -> String? {
-		let dirty: Document = try parseBodyFragment(bodyHtml, baseUri)
+	public func clean(_ bodyHtml: String, _ baseUri: String, _ whitelist: Whitelist, settings: ParseSettings? = nil) throws -> String? {
+		let dirty: Document = try parseBodyFragment(bodyHtml, baseUri, settings: settings)
 		let cleaner: Cleaner = Cleaner(whitelist)
 		let clean: Document = try cleaner.clean(dirty)
         let html = try clean.body()?.html()
@@ -422,9 +422,10 @@ import Foundation
 	 - seealso: ``Cleaner/clean(_:)``
 	*/
 	public func clean(
-        _ bodyHtml: String, _ baseUri: String, _ whitelist: Whitelist, _ outputSettings: OutputSettings
+        _ bodyHtml: String, _ baseUri: String, _ whitelist: Whitelist, _ outputSettings: OutputSettings,
+        settings: ParseSettings? = nil
     ) throws -> String? {
-		let dirty: Document = try SwiftSoup.parseBodyFragment(bodyHtml, baseUri)
+		let dirty: Document = try SwiftSoup.parseBodyFragment(bodyHtml, baseUri, settings: settings)
 		let cleaner: Cleaner = Cleaner(whitelist)
 		let clean: Document = try cleaner.clean(dirty)
 		clean.outputSettings(outputSettings)
@@ -454,8 +455,8 @@ import Foundation
 	 - returns: true if no tags or attributes were removed; false otherwise
 	 - seealso: ``clean(_:_:)``
 	 */
-    public func isValid(_ bodyHtml: String, _ whitelist: Whitelist) throws -> Bool {
-        let dirty = try parseBodyFragment(bodyHtml, "")
+    public func isValid(_ bodyHtml: String, _ whitelist: Whitelist, settings: ParseSettings? = nil) throws -> Bool {
+        let dirty = try parseBodyFragment(bodyHtml, "", settings: settings)
         let cleaner  = Cleaner(whitelist)
         return try cleaner.isValid(dirty)
     }

@@ -18,6 +18,11 @@ public class TreeBuilder {
     public var settings: ParseSettings
     public var tracksSourceRanges: Bool = false
     public var tracksErrors: Bool = false
+    /// Cached from `settings.maximumTreeDepth()` at parse start; `Int.max` means unlimited.
+    /// Enforced by `enforceTreeDepth` against the ancestry depth of each node as it is attached,
+    /// so parser-created structure (`html`/`head`/`body` shells, implied `tbody`, ...) counts
+    /// exactly as authored elements do.
+    public var maxTreeDepth: Int = ParseSettings.unlimitedTreeDepth
     @usableFromInline
     var pendingAttributeElements: [Element] = []
     
@@ -38,6 +43,7 @@ public class TreeBuilder {
         baseUri = []
         errors = ParseErrorList(0, 0)
         settings = ParseSettings(false, false)
+        maxTreeDepth = settings.maximumTreeDepth()
         tokeniser = Tokeniser(reader, nil, settings)
     }
     
@@ -61,6 +67,7 @@ public class TreeBuilder {
         }
         doc.parsedAsXml = false
         self.settings = settings
+        maxTreeDepth = settings.maximumTreeDepth()
         let parseBuffer: [UInt8]
         if tracksSourceRanges, let sourceBuffer = doc.sourceBuffer {
             parseBuffer = sourceBuffer.bytes
@@ -89,6 +96,7 @@ public class TreeBuilder {
         }
         doc.parsedAsXml = false
         self.settings = settings
+        maxTreeDepth = settings.maximumTreeDepth()
         self.errors = errors
         tracksErrors = errors.getMaxSize() > 0
         tokeniser = Tokeniser(reader, tracksErrors ? errors : nil, settings)
@@ -211,5 +219,81 @@ public class TreeBuilder {
     @inline(__always)
     public func currentElement() -> Element? {
         return stack.last
+    }
+
+    /// `true` when a tree depth limit is in force. Guard depth bookkeeping behind this so an
+    /// unlimited parse (the default) pays nothing beyond one integer comparison.
+    @inlinable
+    public var isDepthLimited: Bool {
+        return maxTreeDepth != ParseSettings.unlimitedTreeDepth
+    }
+
+    /**
+     Enforces `settings.maximumTreeDepth()` against the *resulting ancestry depth* of a node that is
+     about to be attached under `parent`.
+
+     Depth convention: the depth of a node is the number of `Element` ancestors on the path from the
+     owning `Document` down to and including the node itself. The `Document` is not counted (even
+     though `Document` subclasses `Element`), so the `html` element of a parsed document -- or the
+     `html` shell the fragment parser creates -- has depth 1. A limit of 512 therefore permits 512
+     nested elements including every parser-created shell (`html`, `head`, `body`, implied `tbody`,
+     ...), exactly as they appear in the finished tree.
+
+     This is deliberately *not* a check on `stack.count`. The stack of open elements can be much
+     shallower than the tree: the HTML `</form>` rule removes a form from the stack without popping
+     its open descendants, so `<form><div></form>` repeated N times builds 2N levels of DOM while
+     the stack never exceeds N+1.
+
+     - parameter parent: the node the new content will be attached under.
+     - parameter addedHeight: the height the attached content adds below `parent`: 1 for a single
+     new element, 0 for a text or comment node (which cannot have element children), or the height
+     of a moved subtree when reparenting.
+
+     The ancestor walk aborts as soon as the running depth exceeds the limit, so the check is
+     O(maxTreeDepth) and is skipped entirely (a single integer comparison) when no limit is set.
+     */
+    @inlinable
+    public func enforceTreeDepth(attachingUnder parent: Node, addedHeight: Int) throws {
+        let limit = maxTreeDepth
+        if limit == ParseSettings.unlimitedTreeDepth { return }
+        var depth = addedHeight
+        if depth > limit { throw TreeBuilder.treeDepthError(limit) }
+        var cursor: Node? = parent
+        while let node = cursor {
+            if node is Document { break }
+            depth += 1
+            if depth > limit { throw TreeBuilder.treeDepthError(limit) }
+            cursor = node.parentNode
+        }
+    }
+
+    @usableFromInline
+    static func treeDepthError(_ limit: Int) -> Exception {
+        return Exception.Error(type: .TreeDepthExceeded,
+                               Message: "Tree depth limit of \(limit) exceeded while parsing")
+    }
+
+    /**
+     The height of `node`'s subtree measured in elements: 1 for an element with no element children.
+     Returns as soon as the measured height exceeds `cap`, so the walk stays bounded.
+     */
+    @usableFromInline
+    func subtreeHeight(_ node: Node, cappedAt cap: Int) -> Int {
+        guard node is Element else { return 0 }
+        var height = 0
+        var level: [Node] = [node]
+        while !level.isEmpty {
+            height += 1
+            if height > cap { return height }
+            var next: [Node] = []
+            for item in level {
+                guard let element = item as? Element else { continue }
+                for child in element.childNodes where child is Element {
+                    next.append(child)
+                }
+            }
+            level = next
+        }
+        return height
     }
 }

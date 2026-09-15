@@ -171,13 +171,13 @@ public class Parser {
 	 
 	 - returns: list of nodes parsed from the input HTML. Note that the context element, if supplied, is not modified.
 	*/
-    public static func parseFragment(_ fragmentHtml: [UInt8], _ context: Element?, _ baseUri: [UInt8]) throws -> Array<Node> {
+    public static func parseFragment(_ fragmentHtml: [UInt8], _ context: Element?, _ baseUri: [UInt8], settings: ParseSettings? = nil) throws -> Array<Node> {
         let treeBuilder = HtmlTreeBuilder()
-        return try treeBuilder.parseFragment(fragmentHtml, context, baseUri, ParseErrorList.noTracking(), treeBuilder.defaultSettings())
+        return try treeBuilder.parseFragment(fragmentHtml, context, baseUri, ParseErrorList.noTracking(), settings ?? treeBuilder.defaultSettings())
     }
     
-    public static func parseFragment(_ fragmentHtml: String, _ context: Element?, _ baseUri: [UInt8]) throws -> Array<Node> {
-        return try parseFragment(fragmentHtml.utf8Array, context, baseUri)
+    public static func parseFragment(_ fragmentHtml: String, _ context: Element?, _ baseUri: [UInt8], settings: ParseSettings? = nil) throws -> Array<Node> {
+        return try parseFragment(fragmentHtml.utf8Array, context, baseUri, settings: settings)
     }
 
 	/**
@@ -204,10 +204,10 @@ public class Parser {
 	 
 	 - returns: Document, with empty head, and HTML parsed into body
 	*/
-	public static func parseBodyFragment(_ bodyHtml: String, _ baseUri: String) throws -> Document {
+	public static func parseBodyFragment(_ bodyHtml: String, _ baseUri: String, settings: ParseSettings? = nil) throws -> Document {
         let doc: Document = Document.createShell(baseUri)
         if let body: Element = doc.body() {
-            let nodeList: Array<Node> = try parseFragment(bodyHtml, body, baseUri.utf8Array)
+            let nodeList: Array<Node> = try parseFragment(bodyHtml, body, baseUri.utf8Array, settings: settings)
 			//var nodes: [Node] = nodeList.toArray(Node[nodeList.size()]) // the node list gets modified when re-parented
             if body.childNodes.isEmpty {
                 body.childNodes.reserveCapacity(nodeList.count)

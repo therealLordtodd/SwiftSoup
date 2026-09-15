@@ -69,10 +69,17 @@ public class XmlTreeBuilder: TreeBuilder {
     
     @inline(__always)
     private func insertNode(_ node: Node)throws {
+        let depthLimited = isDepthLimited
         if stack.isEmpty {
+            if depthLimited {
+                try enforceTreeDepth(attachingUnder: doc, addedHeight: (node is Element) ? 1 : 0)
+            }
             try doc.appendChild(node)
-        } else {
-            try currentElement()?.appendChild(node)
+        } else if let current = currentElement() {
+            if depthLimited {
+                try enforceTreeDepth(attachingUnder: current, addedHeight: (node is Element) ? 1 : 0)
+            }
+            try current.appendChild(node)
         }
         node.treeBuilder = self
         if node.sourceBuffer == nil {

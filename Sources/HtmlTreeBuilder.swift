@@ -130,6 +130,7 @@ class HtmlTreeBuilder: TreeBuilder {
             root = try Element(Tag.valueOf(UTF8Arrays.html, settings), baseUri)
             root?.treeBuilder = self
             try Validate.notNull(obj: root)
+            try enforceTreeDepth(attachingUnder: doc, addedHeight: 1)
             try doc.appendChild(root!)
             push(root!)
             resetInsertionMode()
@@ -423,6 +424,11 @@ class HtmlTreeBuilder: TreeBuilder {
         try insertNode(comment)
     }
     
+    // Text and data nodes attach under `currentElement()` without going through `insertNode`.
+    // They need no depth check of their own: they cannot have element children, so their depth
+    // equals their parent's, and every element is depth-checked both when it is attached
+    // (`insertNode`, `insertInFosterParent`) and when it is reparented (adoption agency). So
+    // `elementDepth(currentElement()) <= maxTreeDepth` is an invariant here.
     @inlinable
     func insert(_ characterToken: Token.Char) throws {
         let current = currentElement()
@@ -566,12 +572,22 @@ class HtmlTreeBuilder: TreeBuilder {
     @inlinable
     internal func insertNode(_ node: Node) throws {
         node.treeBuilder = self
+        // Depth is bounded against the tree the node will live in, not against the stack of open
+        // elements -- see `enforceTreeDepth`. A text or comment node cannot have element children,
+        // so it adds no height of its own.
+        let depthLimited = isDepthLimited
         // if the stack hasn't been set up yet, elements (doctype, comments) go into the doc
         if stack.isEmpty {
+            if depthLimited {
+                try enforceTreeDepth(attachingUnder: doc, addedHeight: (node is Element) ? 1 : 0)
+            }
             try doc.appendChild(node)
         } else if (isFosterInserts()) {
             try insertInFosterParent(node)
         } else if let current = currentElement() {
+            if depthLimited {
+                try enforceTreeDepth(attachingUnder: current, addedHeight: (node is Element) ? 1 : 0)
+            }
             if isBulkBuilding, node.parentNode == nil {
                 node.parentNode = current
                 current.childNodes.append(node)
@@ -1450,11 +1466,21 @@ class HtmlTreeBuilder: TreeBuilder {
             fosterParent = stack[0]
         }
         
+        let depthLimited = isDepthLimited
         if (isLastTableParent) {
             try Validate.notNull(obj: lastTable) // last table cannot be null by this point.
+            // `before` makes the node a sibling of the table, so it lands under the table's parent.
+            if depthLimited, let tableParent = lastTable!.parent() {
+                try enforceTreeDepth(attachingUnder: tableParent,
+                                     addedHeight: subtreeHeight(input, cappedAt: maxTreeDepth))
+            }
             try lastTable!.before(input)
-        } else {
-            try fosterParent?.appendChild(input)
+        } else if let fosterParent = fosterParent {
+            if depthLimited {
+                try enforceTreeDepth(attachingUnder: fosterParent,
+                                     addedHeight: subtreeHeight(input, cappedAt: maxTreeDepth))
+            }
+            try fosterParent.appendChild(input)
         }
     }
 }
