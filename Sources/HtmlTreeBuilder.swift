@@ -625,6 +625,35 @@ class HtmlTreeBuilder: TreeBuilder {
     }
 
     @inline(__always)
+    /// Maintain the stack tracking across removal of the suffix `index..<stack.count`, instead of
+    /// invalidating it. The recorded positions are ascending and the elements below `index` keep
+    /// their positions, so only the recorded entries at or above `index` are dropped -- work
+    /// proportional to what is being removed, not to the depth of the stack.
+    ///
+    /// Must be called before the elements are removed. Only valid for a suffix: removing or
+    /// inserting in the middle shifts the positions of everything above it, and those callers
+    /// still mark the tracking dirty.
+    private func popStackTracking(downTo index: Int) {
+        if stackTrackingDirty {
+            return
+        }
+        while let last = stackTagIdP.last, last >= index {
+            stackTagIdP.removeLast()
+        }
+        while let last = stackTagIdButton.last, last >= index {
+            stackTagIdButton.removeLast()
+        }
+        if stackUnknownTagIdCount > 0 {
+            var i = index
+            while i < stack.count {
+                if stack[i]._tag.tagId == .none {
+                    stackUnknownTagIdCount &-= 1
+                }
+                i &+= 1
+            }
+        }
+    }
+
     private func rebuildStackTrackingIfNeeded() {
         if stackTrackingDirty {
             resetStackTracking()
@@ -807,16 +836,16 @@ class HtmlTreeBuilder: TreeBuilder {
                endName == elName {
                 stack[index].setSourceRangeEnd(endRange.end)
             }
+            popStackTracking(downTo: index)
             stack.removeSubrange(index..<stack.count)
-            stackTrackingDirty = true
         }
     }
 
     
     func popStackToClose(_ elName: ParsingStrings) {
         if let index = lastIndexOfStackName(in: elName) {
+            popStackTracking(downTo: index)
             stack.removeSubrange(index..<stack.count)
-            stackTrackingDirty = true
         }
     }
     
@@ -826,15 +855,15 @@ class HtmlTreeBuilder: TreeBuilder {
     
     func popStackToClose(_ elNames: [[UInt8]]) {
         if let index = lastIndexOfStackName(in: elNames) {
+            popStackTracking(downTo: index)
             stack.removeSubrange(index..<stack.count)
-            stackTrackingDirty = true
         }
     }
     
     func popStackToClose(_ elNames: Set<[UInt8]>) {
         if let index = lastIndexOfStackName(in: elNames) {
+            popStackTracking(downTo: index)
             stack.removeSubrange(index..<stack.count)
-            stackTrackingDirty = true
         }
     }
     
@@ -881,13 +910,14 @@ class HtmlTreeBuilder: TreeBuilder {
         }()
         
         guard let index else {
+            popStackTracking(downTo: 0)
             stack.removeAll()
-            stackTrackingDirty = true
             return
         }
         
-        stack.removeSubrange(stack.index(after: index) ..< stack.endIndex)
-        stackTrackingDirty = true
+        let from = stack.index(after: index)
+        popStackTracking(downTo: from)
+        stack.removeSubrange(from ..< stack.endIndex)
     }
     
     private func clearStackToContext(_ nodeNames: [UInt8]...) {
@@ -908,13 +938,14 @@ class HtmlTreeBuilder: TreeBuilder {
         }()
         
         guard let index else {
+            popStackTracking(downTo: 0)
             stack.removeAll()
-            stackTrackingDirty = true
             return
         }
         
-        stack.removeSubrange(stack.index(after: index) ..< stack.endIndex)
-        stackTrackingDirty = true
+        let from = stack.index(after: index)
+        popStackTracking(downTo: from)
+        stack.removeSubrange(from ..< stack.endIndex)
     }
     
     func aboveOnStack(_ el: Element) -> Element? {
