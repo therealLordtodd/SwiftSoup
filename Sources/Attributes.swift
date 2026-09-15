@@ -178,7 +178,10 @@ open class Attributes: NSCopying {
         guard let pending = pendingAttributes, !pending.isEmpty else { return }
         DebugTrace.log("Attributes.ensureMaterialized: pending=\(pending.count)")
         pendingAttributesCount = 0
-        let shouldIndex = shouldBuildKeyIndex()
+        // Decide on the total the element will hold, not on what is materialized so far: before
+        // materialization `attributes` is empty, so an element with many pending attributes would
+        // otherwise take the linear `firstIndex` path for each one (quadratic in the count).
+        let shouldIndex = attributes.count + pending.count >= Self.keyIndexThreshold
         var localIndex: [ByteSlice: Int]? = nil
         if shouldIndex {
             if !keyIndexDirty, let existing = keyIndex {
