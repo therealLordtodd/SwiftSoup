@@ -186,4 +186,65 @@ class MaxParseWorkTest: XCTestCase {
             XCTAssertEqual(ExceptionType.ParseBudgetExceeded, type)
         }
     }
+
+    /// A fragment and a whole document made of the same markup should cost about the same, so a
+    /// budget measured on one route is meaningful on the other.
+    func testDocumentAndFragmentRoutesChargeComparableWork() throws {
+        let html = nested(depth: 100, paragraphs: 500)
+        let counting = ParseSettings.htmlDefault.withMaxParseWork(Int.max - 1)
+
+        var documentWork = 0
+        _ = try parse(html, counting, work: &documentWork)
+
+        let builder = HtmlTreeBuilder()
+        let shell = Document.createShell("".utf8Array)
+        _ = try builder.parseFragment(html.utf8Array, shell.body(), "".utf8Array,
+                                      ParseErrorList.noTracking(), counting)
+        let fragmentWork = builder.parseWork
+
+        XCTAssertGreaterThan(documentWork, 0)
+        let difference = abs(documentWork - fragmentWork)
+        XCTAssertLessThan(difference, documentWork / 20,
+                          "document \(documentWork) vs fragment \(fragmentWork) units")
+    }
+
+    /// A fragment parse must leave the tree with a single registered dirty source root, the root it
+    /// built under. Registering a node whose ancestors are not already registered makes the document
+    /// scan every root it has recorded, so one root per top-level element is quadratic in the
+    /// document -- 200 KB of sibling paragraphs took 51 s before this was pinned, against 62 ms
+    /// after. Deterministic, unlike timing the parse.
+    func testFragmentParseRegistersOneDirtySourceRoot() throws {
+        // Source range tracking off is the case that bites: with it on, the per-element range marks
+        // the ancestors dirty as a side effect and hides the problem.
+        let noRanges = ParseSettings(false, false, false)
+        let html = String(repeating: "<p>x</p>", count: 4_000)
+
+        let builder = HtmlTreeBuilder()
+        let shell = Document.createShell("".utf8Array)
+        _ = try builder.parseFragment(html.utf8Array, shell.body(), "".utf8Array,
+                                      ParseErrorList.noTracking(), noRanges)
+
+        XCTAssertLessThanOrEqual(builder.doc.dirtySourceRoots.count, 2,
+                                 "one root per top-level element accumulated")
+    }
+
+    /// The same markup must cost the same whether source ranges are tracked or not; a large gap
+    /// means one of the two is doing work proportional to something other than the input.
+    func testFragmentWorkIsComparableWithAndWithoutSourceRanges() throws {
+        let html = nested(depth: 20, paragraphs: 2_000)
+
+        func fragmentWork(_ settings: ParseSettings) throws -> Int {
+            let builder = HtmlTreeBuilder()
+            let shell = Document.createShell("".utf8Array)
+            _ = try builder.parseFragment(html.utf8Array, shell.body(), "".utf8Array,
+                                          ParseErrorList.noTracking(), settings)
+            return builder.parseWork
+        }
+
+        let tracked = try fragmentWork(ParseSettings.htmlDefault.withMaxParseWork(Int.max - 1))
+        let untracked = try fragmentWork(ParseSettings(false, false, false, true, ParseSettings.unlimitedTreeDepth, Int.max - 1))
+        XCTAssertGreaterThan(tracked, 0)
+        XCTAssertLessThan(abs(tracked - untracked), tracked / 2,
+                          "tracked \(tracked) vs untracked \(untracked) units")
+    }
 }

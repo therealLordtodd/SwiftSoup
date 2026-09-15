@@ -101,6 +101,8 @@ class HtmlTreeBuilder: TreeBuilder {
     func parseFragment(_ inputFragment: [UInt8], _ context: Element?, _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) throws -> Array<Node> {
         // context may be null
         _state = HtmlTreeBuilderState.Initial
+        beginBulkAppend()
+        defer { endBulkAppend() }
         initialiseParse(inputFragment, baseUri, errors, settings)
         contextElement = context
         fragmentParsing = true
@@ -132,6 +134,12 @@ class HtmlTreeBuilder: TreeBuilder {
             try Validate.notNull(obj: root)
             try enforceTreeDepth(attachingUnder: doc, addedHeight: 1)
             try doc.appendChild(root!)
+            // Register the root as the parse's dirty source root, which the document route gets for
+            // free: there the html element is created by insertStartTag, which marks it structurally
+            // changed. Appending here does not, because bulk building suppresses the unforced mark --
+            // and then no node has a registered dirty ancestor, so every later registration falls
+            // through to a scan of every root recorded so far, which is quadratic in the document.
+            markStructuralChange(root!)
             push(root!)
             resetInsertionMode()
             
