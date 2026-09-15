@@ -1013,6 +1013,7 @@ class HtmlTreeBuilder: TreeBuilder {
     }
     
     private func replaceInQueue(_ queue: Array<Element>, _ out: Element, _ input: Element)throws->Array<Element> {
+        countStackWork(queue.count)
         var i = queue.count
         while i > 0 {
             i &-= 1
@@ -1390,6 +1391,7 @@ class HtmlTreeBuilder: TreeBuilder {
     func pushActiveFormattingElements(_ input: Element) {
         var numSeen: Int = 0
         for pos in (0..<formattingElements.count).reversed() {
+            countStackWork(1)
             let el: Element? = formattingElements[pos]
             if (el == nil) { // marker
                 break
@@ -1432,6 +1434,7 @@ class HtmlTreeBuilder: TreeBuilder {
         var pos: Int = size - 1
         var skip: Bool = false
         while (true) {
+            countStackWork(1)
             if (pos == 0) { // step 4. if none before, skip to 8
                 skip = true
                 break
@@ -1466,6 +1469,7 @@ class HtmlTreeBuilder: TreeBuilder {
     
     func clearFormattingElementsToLastMarker() {
         while (!formattingElements.isEmpty) {
+            countStackWork(1)
             let el: Element? = removeLastFormattingElement()
             if (el == nil) {
                 break
@@ -1474,6 +1478,7 @@ class HtmlTreeBuilder: TreeBuilder {
     }
     
     func removeFromActiveFormattingElements(_ el: Element?) {
+        countStackWork(formattingElements.count)
         guard let index = formattingElements.lastIndex(of: el) else {
             return
         }
@@ -1482,11 +1487,13 @@ class HtmlTreeBuilder: TreeBuilder {
     }
     
     func isInActiveFormattingElements(_ el: Element) -> Bool {
+        countStackWork(formattingElements.count)
         return isElementInQueue(formattingElements, el)
     }
     
     func getActiveFormattingElement(_ nodeName: [UInt8]) -> Element? {
         for next in formattingElements.reversed() {
+            countStackWork(1)
             if (next == nil) { // scope marker
                 break
             } else if next!.nodeNameUTF8() == nodeName {
@@ -1498,6 +1505,7 @@ class HtmlTreeBuilder: TreeBuilder {
 
     
     func replaceActiveFormattingElement(_ out: Element, _ input: Element) throws {
+        countStackWork(formattingElements.count)
         try formattingElements = replaceInQueue(formattingElements, out, input)
     }
     

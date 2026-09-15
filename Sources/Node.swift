@@ -580,8 +580,16 @@ open class Node: Equatable, Hashable {
     @inline(__always)
     @usableFromInline
     internal func isAncestor(of node: Node) -> Bool {
+        return isAncestor(of: node, charging: nil)
+    }
+
+    /// `charging` is the tree builder whose parse work budget should be charged for the walk, when
+    /// this runs during a parse. Ancestor walks are proportional to depth and happen per node, so
+    /// they have to be visible to the budget rather than free.
+    internal func isAncestor(of node: Node, charging builder: TreeBuilder?) -> Bool {
         var current = node.parentNode
         while let candidate = current {
+            builder?.countStackWork(1)
             if candidate === self {
                 return true
             }
@@ -892,6 +900,9 @@ open class Node: Equatable, Hashable {
     
     @usableFromInline
     internal func reindexChildren(_ start: Int) {
+        // Charged: removing a child renumbers every sibling after it, so a parse that reparents
+        // repeatedly under one parent does work proportional to the children already there.
+        treeBuilder?.countStackWork(childNodes.count - start)
         for (index, node) in childNodes[start...].enumerated() {
             node.setSiblingIndex(start + index)
         }

@@ -1159,6 +1159,9 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
                         adopter.treeBuilder = tb
                         adopter.getAttributes()?.addAll(incoming: formatEl!.getAttributes())
                         let childNodes: [Node] = furthestBlock!.getChildNodes()
+                        // Charged: the adoption agency moves every child of the furthest block, so
+                        // this is proportional to what has accumulated there, once per run.
+                        tb.countStackWork(childNodes.count)
                         for childNode: Node in childNodes {
                             try adopter.appendChild(childNode) // append will reparent. thus the clone to avoid concurrent mod.
                         }

@@ -37,6 +37,10 @@ open class Document: Element {
     @usableFromInline
     internal var dirtySourceRoots: [ObjectIdentifier: Weak<Node>] = [:]
 
+    /// The tree builder whose parse work budget this document's bookkeeping is charged to, set for
+    /// the duration of a parse. Distinct from `treeBuilder`, which also carries bulk-build state.
+    internal weak var parseBudgetHolder: TreeBuilder?
+
 
 
     /**
@@ -685,7 +689,7 @@ open class Document: Element {
         while let current = ancestor {
             // Charged to the parse budget: this walk is per attached node and proportional to the
             // node's depth, which is the dominant depth-sensitive cost of parsing a deep document.
-            (treeBuilder ?? node.treeBuilder)?.countStackWork(1)
+            (parseBudgetHolder ?? node.treeBuilder)?.countStackWork(1)
             let ancestorIdentifier = ObjectIdentifier(current)
             if let registered = dirtySourceRoots[ancestorIdentifier]?.value,
                registered === current,
@@ -695,11 +699,17 @@ open class Document: Element {
             ancestor = current.parentNode
         }
 
+        // Every pass over the recorded roots is charged. This scan runs when the node has no
+        // registered dirty ancestor, and it costs one pass over every root recorded so far, so it
+        // is quadratic in a document that accumulates roots -- the budget has to see it.
+        let budgetHolder = parseBudgetHolder ?? node.treeBuilder
+        budgetHolder?.countStackWork(dirtySourceRoots.count)
         cleanupDirtySourceRoots()
+        budgetHolder?.countStackWork(dirtySourceRoots.count)
         let descendantIdentifiers = dirtySourceRoots.compactMap { entry -> ObjectIdentifier? in
             let (identifier, weakNode) = entry
             guard let existing = weakNode.value,
-                  node.isAncestor(of: existing) else {
+                  node.isAncestor(of: existing, charging: budgetHolder) else {
                 return nil
             }
             return identifier

@@ -64,10 +64,13 @@ public class TreeBuilder {
     
     public func initialiseParse(_ input: [UInt8], _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) {
         doc = Document(baseUri)
-        // Anchor the document to this parse. Everything that depends on the parse rather than on
-        // the entry point -- the work budget in particular -- reaches the tree builder through it,
-        // so it has to be set wherever a parse starts, not only on the document route.
-        doc.treeBuilder = self
+        // Anchor the document to this parse so the work budget can be charged from anywhere the
+        // parse reaches, on every route in. Deliberately a separate reference from `treeBuilder`:
+        // that one also tells a node its tree is being bulk built, which suppresses dirty marking,
+        // and setting it on the document stopped the document registering itself as a dirty source
+        // root -- leaving every node without a registered dirty ancestor, and every registration
+        // scanning all roots. Counting must not change what the parser does.
+        doc.parseBudgetHolder = self
         tracksSourceRanges = settings.tracksSourceRanges()
         if tracksSourceRanges {
             doc.sourceBuffer = SourceBuffer(input)
@@ -96,10 +99,13 @@ public class TreeBuilder {
 
     public func initialiseParse(_ input: UnsafeBufferPointer<UInt8>, owner: AnyObject?, _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) {
         doc = Document(baseUri)
-        // Anchor the document to this parse. Everything that depends on the parse rather than on
-        // the entry point -- the work budget in particular -- reaches the tree builder through it,
-        // so it has to be set wherever a parse starts, not only on the document route.
-        doc.treeBuilder = self
+        // Anchor the document to this parse so the work budget can be charged from anywhere the
+        // parse reaches, on every route in. Deliberately a separate reference from `treeBuilder`:
+        // that one also tells a node its tree is being bulk built, which suppresses dirty marking,
+        // and setting it on the document stopped the document registering itself as a dirty source
+        // root -- leaving every node without a registered dirty ancestor, and every registration
+        // scanning all roots. Counting must not change what the parser does.
+        doc.parseBudgetHolder = self
         tracksSourceRanges = settings.tracksSourceRanges()
         if tracksSourceRanges {
             let copied = Array(input)
