@@ -437,7 +437,7 @@ enum TokeniserState: TokeniserStateProtocol {
                 } else if byte < TokeniserStateVars.asciiUpperLimitByte {
                     if TokeniserStateVars.isAsciiAlpha(byte),
                        let endTagName = t.appropriateEndTagName(),
-                       !r.containsIgnoreCase(prefix: UTF8Arrays.endTagStart, suffix: endTagName) {
+                       !t.rcdataEndTagIsAhead(r, endTagName) {
                         // diverge from spec: got a start tag, but there's no appropriate end tag (</title>), so rather than
                         // consuming to EOF break out here
                         t.tagPending = t.createTagPending(false).name(endTagName)
@@ -451,7 +451,7 @@ enum TokeniserState: TokeniserStateProtocol {
                     }
                 } else if r.matchesLetter(),
                           let endTagName = t.appropriateEndTagName(),
-                          !r.containsIgnoreCase(prefix: UTF8Arrays.endTagStart, suffix: endTagName) {
+                          !t.rcdataEndTagIsAhead(r, endTagName) {
                     // diverge from spec: got a start tag, but there's no appropriate end tag (</title>), so rather than
                     // consuming to EOF break out here
                     t.tagPending = t.createTagPending(false).name(endTagName)
@@ -1172,10 +1172,9 @@ enum TokeniserState: TokeniserStateProtocol {
                 t.transition(.CommentStart)
             } else if (r.matchConsumeIgnoreCase(TokeniserStateVars.doctypeUTF8)) {
                 t.transition(.Doctype)
-            } else if (r.matchConsume(TokeniserStateVars.cdataStartUTF8)) {
-                // todo: should actually check current namepspace, and only non-html allows cdata. until namespace
-                // is implemented properly, keep handling as cdata
-                //} else if (!t.currentNodeInHtmlNS() && r.matchConsume("[CDATA[")) {
+            } else if t.allowsCDATA() && r.matchConsume(TokeniserStateVars.cdataStartUTF8) {
+                // Only foreign content (SVG, MathML) has CDATA sections; in HTML content
+                // `<![CDATA[` falls through to a bogus comment, as the spec says.
                 t.transition(.CdataSection)
             } else {
                 t.error(self)

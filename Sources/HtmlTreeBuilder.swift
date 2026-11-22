@@ -19,14 +19,22 @@ class HtmlTreeBuilder: TreeBuilder {
     
     private enum TagSets {
         // tag searches
-        static let inScope = ParsingStrings(["applet", "caption", "html", "table", "td", "th", "marquee", "object"])
+        // `template` bounds every scope but select scope, as in the spec: content inside a template
+        // must not close or reopen elements outside it.
+        static let inScope = ParsingStrings(["applet", "caption", "html", "table", "td", "th", "marquee", "object", "template"])
         static let list = ParsingStrings(["ol", "ul"])
         static let button = ParsingStrings(["button"])
-        static let tableScope = ParsingStrings(["html", "table"])
+        static let tableScope = ParsingStrings(["html", "table", "template"])
         static let selectScope = ParsingStrings(["optgroup", "option"])
         static let endTags = ParsingStrings(["dd", "dt", "li", "option", "optgroup", "p", "rp", "rt"])
         static let titleTextarea = ParsingStrings(["title", "textarea"])
         static let frames = ParsingStrings(["iframe", "noembed", "noframes", "style", "xmp"])
+        /// Elements whose content the tokenizer reads as raw text, RCDATA or script data. The
+        /// self-closing flag is ignored on them, as on every non-void element in the spec: a
+        /// browser keeps `<script/>` open, so treating it as closed exposed its content as text.
+        static let keepOpenWhenSelfClosed = ParsingStrings(["script", "style", "xmp", "iframe", "noembed",
+                                                            "noframes", "title", "textarea"])
+        static let foreignRoots = ParsingStrings(["svg", "math"])
         
         static let special = ParsingStrings(["address", "applet", "area", "article", "aside", "base", "basefont", "bgsound",
                                              "blockquote", "body", "br", "button", "caption", "center", "col", "colgroup", "command", "dd",
@@ -61,6 +69,9 @@ class HtmlTreeBuilder: TreeBuilder {
 
     private var stackTrackingDirty: Bool = false
     private var stackUnknownTagIdCount: Int = 0
+    /// How many `svg` or `math` elements are on the stack, kept alongside the unknown-tag count
+    /// so the tokenizer's CDATA question costs nothing per ask.
+    private var stackForeignRootCount: Int = 0
     private var stackTagIdP: [Int] = []
     private var stackTagIdButton: [Int] = []
 
@@ -96,6 +107,12 @@ class HtmlTreeBuilder: TreeBuilder {
         fosterInserts = false
         fragmentParsing = false
         resetStackTracking()
+        tokeniser.foreignContentProbe = self
+    }
+
+    override func initialiseParse(_ input: UnsafeBufferPointer<UInt8>, owner: AnyObject?, _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) {
+        super.initialiseParse(input, owner: owner, baseUri, errors, settings)
+        tokeniser.foreignContentProbe = self
     }
 
     func parseFragment(_ inputFragment: [UInt8], _ context: Element?, _ baseUri: [UInt8], _ errors: ParseErrorList, _ settings: ParseSettings) throws -> Array<Node> {
@@ -285,6 +302,7 @@ class HtmlTreeBuilder: TreeBuilder {
         // handle empty unknown tags
         // when the spec expects an empty tag, will directly hit insertEmpty, so won't generate this fake end tag.
         let isSelfClosing = startTag.isSelfClosing()
+            && !(startTag.normalName().map { TagSets.keepOpenWhenSelfClosed.contains($0) } ?? false)
         if isSelfClosing {
             let el: Element = try insertEmpty(startTag)
             push(el)
@@ -640,6 +658,7 @@ class HtmlTreeBuilder: TreeBuilder {
     private func resetStackTracking() {
         stackTrackingDirty = false
         stackUnknownTagIdCount = 0
+        stackForeignRootCount = 0
         stackTagIdP.removeAll(keepingCapacity: true)
         stackTagIdButton.removeAll(keepingCapacity: true)
         if stack.isEmpty {
@@ -675,6 +694,9 @@ class HtmlTreeBuilder: TreeBuilder {
             while i < stack.count {
                 if stack[i]._tag.tagId == .none {
                     stackUnknownTagIdCount &-= 1
+                    if TagSets.foreignRoots.contains(stack[i].nodeNameUTF8()) {
+                        stackForeignRootCount &-= 1
+                    }
                 }
                 i &+= 1
             }
@@ -700,6 +722,9 @@ class HtmlTreeBuilder: TreeBuilder {
         let tagId = element._tag.tagId
         if tagId == .none {
             stackUnknownTagIdCount &+= 1
+            if TagSets.foreignRoots.contains(element.nodeNameUTF8()) {
+                stackForeignRootCount &+= 1
+            }
             return
         }
         if tagId == .p {
@@ -717,6 +742,9 @@ class HtmlTreeBuilder: TreeBuilder {
         let tagId = element._tag.tagId
         if tagId == .none {
             stackUnknownTagIdCount &-= 1
+            if TagSets.foreignRoots.contains(element.nodeNameUTF8()) {
+                stackForeignRootCount &-= 1
+            }
             return
         }
         if tagId == .p {
@@ -1549,4 +1577,14 @@ class HtmlTreeBuilder: TreeBuilder {
 
 fileprivate func ~= (pattern: [String], value: String) -> Bool {
     return pattern.contains(value)
+}
+
+extension HtmlTreeBuilder: ForeignContentProbe {
+    /// Whether an `svg` or `math` element is open. An approximation of the spec's "adjusted current
+    /// node is not in the HTML namespace" (this builder has no namespaces): it answers yes inside an
+    /// SVG or MathML subtree, including its HTML integration points, and no everywhere else.
+    func isInForeignContent() -> Bool {
+        rebuildStackTrackingIfNeeded()
+        return stackForeignRootCount > 0
+    }
 }

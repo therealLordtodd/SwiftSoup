@@ -176,6 +176,13 @@ final class Tokeniser {
     private var lastStartTag: [UInt8]?  // the last start tag emitted, to test appropriate end tag
     private var lastStartTagId: Token.Tag.TagId = .none
     private var selfClosingFlagAcknowledged: Bool = true
+    /// Whether `</name` for the current RCDATA element is known to lie ahead. Set the first time
+    /// the lookup finds it and cleared by the next start tag, so a title full of tags scans ahead
+    /// once rather than once per tag (which was quadratic).
+    private var rcdataEndTagAhead = false
+    /// Asked whether `<![CDATA[` opens a CDATA section here. In HTML that is only so in foreign
+    /// content (SVG, MathML); elsewhere it is a bogus comment. `nil` (the XML builder) always allows it.
+    weak var foreignContentProbe: ForeignContentProbe?
     private let lowercaseAttributeNames: Bool
     private let attributesNormalizedByDefault: Bool
     let lowercaseTagNames: Bool
@@ -339,6 +346,7 @@ final class Tokeniser {
         
         if (token.type == Token.TokenType.StartTag) {
             let startTag: Token.StartTag  = token as! Token.StartTag
+            rcdataEndTagAhead = false
             if startTag.tagId == .none {
                 _ = startTag.normalNameSlice()
             }
@@ -1131,6 +1139,19 @@ final class Tokeniser {
         return false
     }
     
+    /// Whether `</` + `endTagName` appears ahead of the reader, remembered once found (see
+    /// `rcdataEndTagAhead`).
+    func rcdataEndTagIsAhead(_ r: CharacterReader, _ endTagName: [UInt8]) -> Bool {
+        if rcdataEndTagAhead { return true }
+        rcdataEndTagAhead = r.containsIgnoreCase(prefix: UTF8Arrays.endTagStart, suffix: endTagName)
+        return rcdataEndTagAhead
+    }
+
+    /// Whether `<![CDATA[` opens a CDATA section at this point.
+    func allowsCDATA() -> Bool {
+        return foreignContentProbe?.isInForeignContent() ?? true
+    }
+
     func appropriateEndTagName() -> [UInt8]? {
         if lastStartTagId != .none {
             return Token.Tag.tagIdName(lastStartTagId)
@@ -1229,4 +1250,9 @@ final class Tokeniser {
         }
         return Array(builder.buffer)
     }
+}
+
+/// Lets the tokenizer ask the tree builder whether the current node is in foreign content.
+protocol ForeignContentProbe: AnyObject {
+    func isInForeignContent() -> Bool
 }
