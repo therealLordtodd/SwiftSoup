@@ -369,13 +369,15 @@ class HtmlParserTest: XCTestCase {
 	}
 
 	func testHandlesCdata() throws {
-		// todo: as this is html namespace, should actually treat as bogus comment, not cdata. keep as cdata for now
-		let h = "<div id=1><![CDATA[<html>\n<foo><&amp;]]></div>" // the &amp; in there should remain literal
+		// In HTML content <![CDATA[ is a bogus comment (the spec; the old todo here). Inside SVG
+		// or MathML it is CDATA: see SpecConformanceTest.
+		let h = "<div id=1><![CDATA[<html>\n<foo><&amp;]]></div>"
 		let doc: Document = try SwiftSoup.parse(h)
 		let div: Element = try doc.getElementById("1")!
-		XCTAssertEqual("<html> <foo><&amp;", try div.text())
+		XCTAssertEqual("", try div.text())
 		XCTAssertEqual(0, div.children().size())
-		XCTAssertEqual(1, div.childNodeSize()) // no elements, one text node
+		XCTAssertEqual(1, div.childNodeSize()) // no elements, one comment node
+		XCTAssertTrue(div.childNode(0) is Comment)
 	}
 
 	func testHandlesUnclosedCdataAtEOF() throws {
