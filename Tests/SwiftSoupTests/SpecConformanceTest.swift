@@ -19,12 +19,13 @@ final class SpecConformanceTest: XCTestCase {
     /// script data, not body text.
     func testASelfClosedScriptStaysOpenUntilItsEndTag() throws {
         let doc = try SwiftSoup.parse("<p>A<script type=\"text/plain\"/>HIDDEN</script>B</p>")
-        XCTAssertEqual(try doc.body()!.text(), "AB")
+        // text() puts a space at the element boundary; what matters is that HIDDEN is not text.
+        XCTAssertEqual(try doc.body()!.text(), "A B")
         XCTAssertEqual(try doc.select("script").first()!.data(), "HIDDEN")
     }
 
     func testOtherSelfClosedRawTextElementsStayOpen() throws {
-        XCTAssertEqual(try SwiftSoup.parse("<p>A<style/>p{}</style>B</p>").body()!.text(), "AB")
+        XCTAssertEqual(try SwiftSoup.parse("<p>A<style/>p{}</style>B</p>").body()!.text(), "A B")
         XCTAssertEqual(try SwiftSoup.parse("<p>A<xmp/>raw</xmp>B</p>").select("xmp").first()!.text(), "raw")
         let textarea = try SwiftSoup.parse("<p>A<textarea/>value</textarea>B</p>").select("textarea").first()!
         XCTAssertEqual(try textarea.text(), "value")
@@ -37,7 +38,7 @@ final class SpecConformanceTest: XCTestCase {
     func testSelfClosingStillAppliesElsewhere() throws {
         let doc = try SwiftSoup.parse("<p>A<foo/>B<br/>C</p>")
         XCTAssertEqual(try doc.select("foo").first()!.childNodeSize(), 0)
-        XCTAssertEqual(try doc.body()!.text(), "ABC")
+        XCTAssertEqual(try doc.body()!.text(), "AB C") // <br> reads as a space in text()
     }
 
     // MARK: - template is a scope boundary

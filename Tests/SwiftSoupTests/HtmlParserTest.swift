@@ -371,20 +371,23 @@ class HtmlParserTest: XCTestCase {
 	func testHandlesCdata() throws {
 		// In HTML content <![CDATA[ is a bogus comment (the spec; the old todo here). Inside SVG
 		// or MathML it is CDATA: see SpecConformanceTest.
+		// A bogus comment ends at its first `>`, so `<foo>` after it is an element, as in a browser.
 		let h = "<div id=1><![CDATA[<html>\n<foo><&amp;]]></div>"
 		let doc: Document = try SwiftSoup.parse(h)
 		let div: Element = try doc.getElementById("1")!
-		XCTAssertEqual("", try div.text())
-		XCTAssertEqual(0, div.children().size())
-		XCTAssertEqual(1, div.childNodeSize()) // no elements, one comment node
 		XCTAssertTrue(div.childNode(0) is Comment)
+		XCTAssertEqual("[CDATA[<html", (div.childNode(0) as! Comment).getData())
+		XCTAssertEqual(1, div.children().size()) // <foo>
+		XCTAssertEqual("<&]]>", try div.text())
 	}
 
 	func testHandlesUnclosedCdataAtEOF() throws {
 		// https://github.com/jhy/jsoup/issues/349 would crash, as character reader would try to seek past EOF
 		let h = "<![CDATA[]]"
 		let doc = try SwiftSoup.parse(h)
-		XCTAssertEqual(1, doc.body()!.childNodeSize())
+		// Outside foreign content this is a bogus comment, placed before <html>; the body is empty.
+		XCTAssertEqual(0, doc.body()!.childNodeSize())
+		XCTAssertTrue(doc.getChildNodes().contains { $0 is Comment })
 	}
 
 	func testHandlesInvalidStartTags() throws {
@@ -445,22 +448,26 @@ class HtmlParserTest: XCTestCase {
 	}
 
 	func testHandlesKnownEmptyBlocks() throws {
-		// if a known tag, allow self closing outside of spec, but force an end tag. unknown tags can be self closing.
+		// A known non-raw-text tag may self close outside of spec (with a forced end tag); unknown
+		// tags can self close. A raw-text element ignores the flag, as in the spec and every browser:
+		// `<script src='/foo' />` stays open, and with no `</script>` the rest is script data.
 		let h = "<div id='1' /><script src='/foo' /><div id=2><img /><img></div><a id=3 /><i /><foo /><foo>One</foo> <hr /> hr text <hr> hr text two"
 		let doc = try SwiftSoup.parse(h)
-		XCTAssertEqual("<div id=\"1\"></div><script src=\"/foo\"></script><div id=\"2\"><img /><img /></div><a id=\"3\"></a><i></i><foo /><foo>One</foo> <hr /> hr text <hr /> hr text two", try TextUtil.stripNewlines(doc.body()!.html()))
+		XCTAssertEqual("<div id=\"1\"></div><script src=\"/foo\"><div id=2><img /><img></div><a id=3 /><i /><foo /><foo>One</foo> <hr /> hr text <hr> hr text two</script>", try TextUtil.stripNewlines(doc.body()!.html()))
 	}
     
     func testHandlesKnownEmptyNoFrames() throws {
+        // noframes is raw text and ignores the self-closing flag (spec): with no end tag, the rest is its text.
         let h = "<html><head><noframes /><meta name=foo></head><body>One</body></html>";
         let doc = try SwiftSoup.parse(h);
-        XCTAssertEqual("<html><head><noframes></noframes><meta name=\"foo\" /></head><body>One</body></html>", try TextUtil.stripNewlines(doc.html()));
+        XCTAssertEqual("<html><head><noframes>&lt;meta name=foo&gt;&lt;/head&gt;&lt;body&gt;One&lt;/body&gt;&lt;/html&gt;</noframes></head><body></body></html>", try TextUtil.stripNewlines(doc.html()));
     }
     
     func testHandlesKnownEmptyStyle() throws {
+        // style is raw text and ignores the self-closing flag (spec): with no end tag, the rest is its data.
         let h = "<html><head><style /><meta name=foo></head><body>One</body></html>";
         let doc = try SwiftSoup.parse(h);
-        XCTAssertEqual("<html><head><style></style><meta name=\"foo\" /></head><body>One</body></html>", try TextUtil.stripNewlines(doc.html()));
+        XCTAssertEqual("<html><head><style><meta name=foo></head><body>One</body></html></style></head><body></body></html>", try TextUtil.stripNewlines(doc.html()));
     }
 
     func testHandlesKnownEmptyTitle() throws {
